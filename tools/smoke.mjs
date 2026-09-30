@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import * as lib from '../public/lib.js';
+import { parseReflog, classifyUndo, isCommitLike } from '../lib/reflog.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(HERE, '..');
@@ -132,6 +133,82 @@ function libChecks() {
   check('refBadgeClass 识别类型', lib.refBadgeClass('HEAD -> main') === 'head' && lib.refBadgeClass('tag: v1') === 'tag' && lib.refBadgeClass('origin/main') === 'remote');
 }
 
+/* --------------------------- 撤销判定单元测试 --------------------------- */
+
+function undoUnitChecks() {
+  console.log('\n[6] 撤销判定（lib/reflog.mjs）');
+
+  const reflog = [
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x1faaaaaaa\x1fHEAD@{0}\x1fcommit: 第二次提交\x1fHEAD@{0}\x1f2026-01-02T00:00:00+08:00\x1e',
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\x1fbbbbbbb\x1fHEAD@{1}\x1fcommit (initial): 第一次提交\x1fHEAD@{1}\x1f2026-01-01T00:00:00+08:00\x1e',
+  ].join('');
+  const parsed = parseReflog(reflog);
+  check('parseReflog 解析条数与字段', parsed.length === 2 && parsed[0].short === 'aaaaaaa' && parsed[0].subject === 'commit: 第二次提交');
+  check('parseReflog 忽略空记录', parseReflog('\x1e\x1e').length === 0);
+  check('isCommitLike 识别各类提交', ['commit: x', 'commit (amend): x', 'commit (initial): x', 'commit (merge): x', 'cherry-pick: x', 'revert: x'].every(isCommitLike));
+  check('isCommitLike 不误判其它操作', !['reset: moving to HEAD~1', 'checkout: moving from a to b', 'merge x: Fast-forward'].some(isCommitLike));
+
+  const base = { entries: parsed, operation: null, unmerged: false, dirty: false, branch: 'main', detached: false, hasRemote: false, branchExists: () => true };
+
+  const commitPlan = classifyUndo(base);
+  check('普通提交 → reset --soft 回上一个提交', commitPlan.available && commitPlan.kind === 'reset-soft' && commitPlan.args.join(' ') === `reset --soft ${parsed[1].oid}`);
+  check('提交撤销的方案里不含 --hard', !commitPlan.args.includes('--hard'));
+  check('提交撤销说明了改动会回到暂存区', /暂存区/.test(commitPlan.effect));
+
+  const amendPlan = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'commit (amend): 改过的提交' }, parsed[1]] });
+  check('amend → 回到改写前的提交', amendPlan.kind === 'reset-soft' && /amend/.test(amendPlan.label));
+
+  const mergeCommit = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'commit (merge): Merge branch x' }, parsed[1]] });
+  check('合并提交 → 可撤销且提示影响', mergeCommit.kind === 'reset-soft' && mergeCommit.warnings.some((w) => /合并/.test(w)));
+
+  const remotePlan = classifyUndo({ ...base, hasRemote: true });
+  check('有远端时提示 force push 风险', remotePlan.warnings.some((w) => /force push/.test(w)));
+  const dirtyPlan = classifyUndo({ ...base, dirty: true });
+  check('工作区脏时不阻止撤销但会说明', dirtyPlan.available && dirtyPlan.warnings.some((w) => /保留/.test(w)));
+
+  const initialOnly = classifyUndo({ ...base, entries: [parsed[1]] });
+  check('仅一次提交 → 撤销 = 删除分支引用回到 unborn', initialOnly.available && initialOnly.kind === 'drop-initial' && initialOnly.args.join(' ') === 'update-ref -d refs/heads/main');
+  check('无分支名时拒绝删除首次提交', classifyUndo({ ...base, entries: [parsed[1]], branch: null }).available === false);
+
+  const resetPlan = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'reset: moving to HEAD~1' }, parsed[1]] });
+  check('reset → reset --keep 回到之前', resetPlan.kind === 'reset-keep' && resetPlan.args[1] === '--keep');
+
+  const checkoutPlan = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'checkout: moving from feat/x to main' }, parsed[1]] });
+  check('分支切换 → switch 切回上一个分支', checkoutPlan.kind === 'switch-branch' && checkoutPlan.args.join(' ') === 'switch feat/x');
+
+  // 「从游离提交切到分支」→ 撤销要重新游离回去；「从分支切到游离提交」→ 撤销是切回分支
+  const checkoutDetached = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: `checkout: moving from ${'c'.repeat(40)} to main` }, parsed[1]] });
+  check('从游离提交切到分支 → switch --detach 回去', checkoutDetached.kind === 'switch-branch' && checkoutDetached.args.join(' ') === `switch --detach ${'c'.repeat(40)}`);
+  const checkoutToDetached = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: `checkout: moving from main to ${'c'.repeat(40)}` }, parsed[1]] });
+  check('从分支切到游离提交 → switch 回原分支', checkoutToDetached.kind === 'switch-branch' && checkoutToDetached.args.join(' ') === 'switch main');
+
+  check('上一个分支已删除 → 明确拒绝', classifyUndo({ ...base, branchExists: () => false, entries: [{ ...parsed[0], subject: 'checkout: moving from gone-branch to main' }, parsed[1]] }).available === false);
+
+  const mergePlan = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: "merge feature: Merge made by the 'ort' strategy." }, parsed[1]] });
+  check('已完成的合并 → reset --keep 回到合并前', mergePlan.kind === 'reset-keep' && /合并/.test(mergePlan.label));
+
+  const rebasePlan = classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'rebase (finish): returning to refs/heads/main' }, parsed[1]] });
+  check('已完成的变基 → 可撤销', rebasePlan.available && rebasePlan.kind === 'reset-keep' && /变基/.test(rebasePlan.label));
+
+  const inProgress = classifyUndo({ ...base, entries: [], unmerged: true, operation: { type: 'merge', label: '合并进行中 (merge)' } });
+  check('进行中的 merge → 撤销 = merge --abort', inProgress.available && inProgress.kind === 'abort' && inProgress.args.join(' ') === 'merge --abort');
+  const rebaseProgress = classifyUndo({ ...base, entries: [], operation: { type: 'rebase', label: '变基进行中' } });
+  check('进行中的 rebase → rebase --abort', rebaseProgress.args.join(' ') === 'rebase --abort');
+  const bisect = classifyUndo({ ...base, entries: [], operation: { type: 'bisect', label: 'bisect' } });
+  check('bisect → git bisect reset', bisect.args.join(' ') === 'bisect reset');
+  const lock = classifyUndo({ ...base, entries: [], operation: { type: 'lock', label: 'index.lock' } });
+  check('index.lock → 拒绝撤销', lock.available === false && /index\.lock/.test(lock.reason));
+
+  check('无 reflog → 明确说明原因', classifyUndo({ ...base, entries: [] }).available === false);
+  check('未知操作 → 不猜动作', classifyUndo({ ...base, entries: [{ ...parsed[0], subject: 'gc: something' }, parsed[1]] }).available === false);
+  check('冲突未解决时 reset 类被拒', classifyUndo({ ...base, unmerged: true, entries: [{ ...parsed[0], subject: 'reset: moving to HEAD~1' }, parsed[1]] }).available === false);
+  check('冲突未解决时提交撤销仍可用（reset --soft 不受影响）', classifyUndo({ ...base, unmerged: true }).available === true);
+
+  const allPlans = [commitPlan, amendPlan, mergeCommit, initialOnly, resetPlan, checkoutPlan, checkoutDetached, mergePlan, rebasePlan, inProgress];
+  check('所有方案都不含 --hard', allPlans.every((p) => !p.args.includes('--hard')));
+  check('所有可用方案都有 label/command/args', allPlans.every((p) => p.available && p.label && p.command && Array.isArray(p.args)));
+}
+
 /* --------------------------- 静态一致性 --------------------------- */
 
 function staticChecks() {
@@ -186,8 +263,12 @@ async function httpChecks() {
   // 未跟踪文件应当能看到本项目的文件（在 git-browser 仓库里）
   const untrackedNames = (s.untracked || []).map((f) => f.path);
   if (REPO_HINT) {
-    check('未跟踪列表包含 server.mjs', untrackedNames.includes('server.mjs'), untrackedNames.slice(0, 5).join(', '));
-    check('未跟踪列表包含 public/app.js', untrackedNames.includes('public/app.js'));
+    // 不假设这些文件处于什么状态（可能已提交），只要求工作区里读得到
+    for (const probe of ['server.mjs', 'public/app.js', 'public/styles.css']) {
+      const r = await getJSON('/api/file', { repo: repoId, path: probe, scope: 'worktree' });
+      check(`工作区里能读到 ${probe}`, r.status === 200 && typeof r.json?.content === 'string', `status=${r.status}`);
+    }
+    check('未跟踪列表里没有 .git 内部文件', !untrackedNames.some((p) => p.startsWith('.git/')));
   }
 
   // 单文件的状态一致性
@@ -311,6 +392,7 @@ console.log(`应用目录: ${APP_DIR}`);
 
 staticChecks();
 libChecks();
+undoUnitChecks();
 let ctx;
 try {
   ctx = await httpChecks();
