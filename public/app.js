@@ -14,9 +14,14 @@ import {
   graphSvg,
   refBadgeClass,
   GROUPS,
+  resolveTheme,
+  otherTheme,
+  themeIcon,
+  themeButtonTitle,
 } from './lib.js';
 
 const $ = (id) => document.getElementById(id);
+const THEME_KEY = 'gb-theme';
 
 const S = {
   repos: [],
@@ -38,6 +43,8 @@ const S = {
   lastFetchAt: null,
   cursor: 0,
   err: null,
+  theme: 'dark',
+  themeExplicit: false,
 };
 
 /* ------------------------------ 数据加载 ------------------------------ */
@@ -124,6 +131,54 @@ async function refreshAll({ silent = true } = {}) {
   await loadState();
   await loadLog({ silent });
   if (S.sel) await loadDetail();
+}
+
+/* ------------------------------ 主题 ------------------------------ */
+
+function systemPrefersLight() {
+  return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+}
+
+function readSavedTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function initTheme() {
+  const saved = readSavedTheme();
+  // 首屏由 index.html 里的内联脚本先落地，这里与之保持一致
+  S.theme = document.documentElement.dataset.theme || resolveTheme(saved, systemPrefersLight());
+  S.themeExplicit = saved === 'light' || saved === 'dark';
+  renderThemeButton();
+}
+
+function applyTheme(theme, { persist = false } = {}) {
+  S.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  if (persist) {
+    S.themeExplicit = true;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* 隐私模式下写不了就只在本次会话生效 */
+    }
+  }
+  renderThemeButton();
+}
+
+function toggleTheme() {
+  applyTheme(otherTheme(S.theme), { persist: true });
+}
+
+function renderThemeButton() {
+  const btn = $('btn-theme');
+  if (!btn) return;
+  btn.textContent = themeIcon(S.theme);
+  btn.title = themeButtonTitle(S.theme);
+  btn.setAttribute('aria-label', btn.title);
 }
 
 /* ------------------------------ 渲染：顶栏 ------------------------------ */
@@ -527,6 +582,7 @@ function renderStatusbar() {
 
 function render() {
   renderTop();
+  renderThemeButton();
   renderLive();
   renderSidebar();
   renderList();
@@ -635,10 +691,22 @@ $('repo-select').addEventListener('change', async (ev) => {
 });
 
 $('btn-refresh').addEventListener('click', () => refreshAll());
+$('btn-theme').addEventListener('click', () => toggleTheme());
+
+// 用户没显式选过主题时，跟随系统切换
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: light)');
+  const onSystemTheme = () => {
+    if (!S.themeExplicit) applyTheme(resolveTheme(null, mq.matches));
+  };
+  if (mq.addEventListener) mq.addEventListener('change', onSystemTheme);
+  else if (mq.addListener) mq.addListener(onSystemTheme);
+}
 
 document.addEventListener('keydown', (ev) => {
   if (ev.target.matches('input, select, textarea')) return;
   if (ev.key === 'r' && !ev.ctrlKey && !ev.metaKey) refreshAll();
+  else if (ev.key === 't' && !ev.ctrlKey && !ev.metaKey) toggleTheme();
   else if (ev.key === '1') {
     S.tab = 'status';
     render();
@@ -738,6 +806,7 @@ function connectStream() {
 /* ------------------------------ 启动 ------------------------------ */
 
 (async function boot() {
+  initTheme();
   try {
     await loadRepos();
   } catch (e) {

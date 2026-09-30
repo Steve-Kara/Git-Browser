@@ -49,6 +49,149 @@ async function getJSON(p, params = {}) {
   return { status: res.status, text, json: (() => { try { return JSON.parse(text); } catch { return null; } })() };
 }
 
+/* --------------------------- 主题检查 --------------------------- */
+
+/** 把 styles.css 拍平成 [选择器, 声明块] 列表（本项目没有嵌套规则） */
+function parseCssBlocks(css) {
+  const blocks = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(css))) {
+    blocks.push({ selector: m[1].trim(), body: m[2] });
+  }
+  return blocks;
+}
+
+function tokensOf(css, selectorMatch) {
+  const tokens = new Map();
+  for (const b of parseCssBlocks(css)) {
+    if (!selectorMatch(b.selector)) continue;
+    for (const decl of b.body.split(';')) {
+      const i = decl.indexOf(':');
+      if (i < 0) continue;
+      const name = decl.slice(0, i).trim();
+      if (name.startsWith('--')) tokens.set(name, decl.slice(i + 1).trim());
+    }
+  }
+  return tokens;
+}
+
+function parseColor(value) {
+  const v = String(value ?? '').trim();
+  let m = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (m) {
+    let h = m[1];
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 };
+  }
+  m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?\s*\)$/i);
+  if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] === undefined ? 1 : Number(m[4]) };
+  return null;
+}
+
+/** 半透明色叠在底色上的实际观感色 */
+function composite(value, baseValue) {
+  const c = parseColor(value);
+  const b = parseColor(baseValue) || { r: 255, g: 255, b: 255, a: 1 };
+  if (!c) return null;
+  const mix = (x, y) => Math.round(x * c.a + y * (1 - c.a));
+  return `#${[mix(c.r, b.r), mix(c.g, b.g), mix(c.b, b.b)].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function hexToRgb(value) {
+  const c = parseColor(value);
+  return c ? [c.r, c.g, c.b] : null;
+}
+
+function relLuminance([r, g, b]) {
+  const f = (c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function contrastRatio(fg, bg) {
+  const a = hexToRgb(fg);
+  const b = hexToRgb(bg);
+  if (!a || !b) return null;
+  const l1 = relLuminance(a);
+  const l2 = relLuminance(b);
+  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function themeChecks() {
+  console.log('\n[5] 主题（浅色/深色）');
+  const rawCss = fs.readFileSync(path.join(APP_DIR, 'public', 'styles.css'), 'utf8');
+  const html = fs.readFileSync(path.join(APP_DIR, 'public', 'index.html'), 'utf8');
+
+  // 注释会让选择器解析错位，先去注释再拍平
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const dark = tokensOf(css, (s) => s === ':root');
+  const light = tokensOf(css, (s) => s.includes('data-theme="light"'));
+
+  check('存在深色令牌块 :root', dark.size > 20, `tokens=${dark.size}`);
+  check('存在浅色令牌块 [data-theme="light"]', light.size > 20, `tokens=${light.size}`);
+
+  // 1) 浅色必须覆盖深色的每一个颜色令牌（否则会继承深色值 —— 浅色模式下必然穿帮）
+  const shared = new Set(['--mono']);
+  const missing = [...dark.keys()].filter((k) => !shared.has(k) && !light.has(k));
+  check('浅色覆盖了全部颜色令牌（无继承深色值）', missing.length === 0, missing.join(', '));
+  const extra = [...light.keys()].filter((k) => !dark.has(k));
+  check('浅色没有定义深色里不存在的令牌', extra.length === 0, extra.join(', '));
+
+  // 2) 所有 var(--x) 引用都必须在深色块里有定义
+  const referenced = new Set([...css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+  const undefinedTokens = [...referenced].filter((t) => !dark.has(t));
+  check('CSS 里引用的令牌全部有定义', undefinedTokens.length === 0, undefinedTokens.join(', '));
+
+  // 3) 组件样式里不应再有写死的颜色（令牌块本身除外）
+  const componentCss = css.replace(/:root(\[[^\]]*\])?\s*\{[^}]*\}/g, '');
+  const strayHex = [...componentCss.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => m[0]);
+  check('组件样式里没有写死的颜色（全部走令牌）', strayHex.length === 0, strayHex.join(', '));
+
+  // 4) 对比度：正文/次要文字/diff 增删/chip 文字都要达标
+  const pairs = [
+    ['正文 fg / bg', '--fg', '--bg', 4.5],
+    ['次要文字 fg-dim / bg-2', '--fg-dim', '--bg-2', 4.5],
+    ['弱化文字 fg-mute / bg', '--fg-mute', '--bg', 3],
+    ['链接 accent / bg', '--accent', '--bg', 4.5],
+    ['新增行文字 / 新增行底色', '--diff-add-fg', '--diff-add-bg', 4.5],
+    ['删除行文字 / 删除行底色', '--diff-del-fg', '--diff-del-bg', 4.5],
+    ['hunk 头文字 / 底色', '--diff-hunk-fg', '--diff-hunk-bg', 4.5],
+    ['分支 chip 文字 / 底色', '--chip-branch-fg', '--chip-branch-bg', 4.5],
+    ['警告 chip 文字 / 底色', '--chip-warn-fg', '--chip-warn-bg', 4.5],
+    ['错误横幅文字 / 底色', '--banner-err-fg', '--banner-err-bg', 4.5],
+  ];
+  for (const [, themeName, tokens] of [
+    ['dark', '深色', dark],
+    ['light', '浅色', light],
+  ]) {
+    const bad = [];
+    for (const [label, fgTok, bgTok, min] of pairs) {
+      const base = tokens.get('--bg');
+      const ratio = contrastRatio(composite(tokens.get(fgTok), base), composite(tokens.get(bgTok), base));
+      if (ratio === null) bad.push(`${label}(无法解析)`);
+      else if (ratio < min) bad.push(`${label}=${ratio.toFixed(2)}<${min}`);
+    }
+    check(`${themeName}模式文字对比度全部达标`, bad.length === 0, bad.join('; '));
+  }
+
+  // 5) 泳道颜色：两种主题都要有 8 条且互不相同
+  for (const [name, tokens] of [['深色', dark], ['浅色', light]]) {
+    const lanes = Array.from({ length: 8 }, (_, i) => tokens.get(`--lane-${i}`));
+    check(`${name}模式定义了 8 条泳道颜色且互不重复`, lanes.every(Boolean) && new Set(lanes).size === 8, lanes.join(','));
+  }
+
+  // 6) 首屏主题落地：内联脚本必须在 <link rel=stylesheet> 之前设置 data-theme
+  const scriptIdx = html.indexOf("dataset.theme");
+  const linkIdx = html.indexOf('href="/styles.css"');
+  check('主题在首屏样式前应用（无闪烁）', scriptIdx > 0 && linkIdx > scriptIdx, `script@${scriptIdx} link@${linkIdx}`);
+  check('切换按钮 #btn-theme 存在', /id="btn-theme"/.test(html));
+  check('帮助里包含 t 快捷键', /<kbd>t<\/kbd>/.test(html));
+}
+
 /* --------------------------- 纯函数单元测试 --------------------------- */
 
 const SAMPLE_PATCH = [
@@ -130,6 +273,19 @@ function libChecks() {
   check('relTime 刚刚 / 分钟', lib.relTime(new Date(Date.now() - 5000).toISOString()) === '刚刚' && lib.relTime(new Date(Date.now() - 5 * 60000).toISOString()) === '5 分钟前');
   check('splitPath 拆分目录', lib.splitPath('a/b/c.js').dir === 'a/b/' && lib.splitPath('x.js').dir === '');
   check('refBadgeClass 识别类型', lib.refBadgeClass('HEAD -> main') === 'head' && lib.refBadgeClass('tag: v1') === 'tag' && lib.refBadgeClass('origin/main') === 'remote');
+
+  // 主题纯函数
+  check('resolveTheme: 显式选择优先于系统偏好', lib.resolveTheme('light', false) === 'light' && lib.resolveTheme('dark', true) === 'dark');
+  check('resolveTheme: 无选择时跟随系统', lib.resolveTheme(null, true) === 'light' && lib.resolveTheme(null, false) === 'dark');
+  check('resolveTheme: 脏数据回落到深色', lib.resolveTheme('blue', false) === 'dark' && lib.resolveTheme(undefined, undefined) === 'dark');
+  check('otherTheme 互换', lib.otherTheme('dark') === 'light' && lib.otherTheme('light') === 'dark');
+  check('themeIcon 深色🌙 / 浅色☀️', lib.themeIcon('dark') === '🌙' && lib.themeIcon('light') === '☀️');
+  check('themeButtonTitle 说明当前与目标', lib.themeButtonTitle('light').includes('浅色') && lib.themeButtonTitle('light').includes('深色'));
+
+  // 泳道图改为 class 驱动颜色，主题切换无需重渲染
+  const svg = lib.graphSvg(lib.computeRows([{ hash: 'b', parents: ['a'] }, { hash: 'a', parents: [] }])[0]);
+  check('graphSvg 用 lane-N class 而非写死颜色', svg.includes('lane-0') && !/#[0-9a-f]{6}/i.test(svg), svg);
+  check('graphSvg 泳道序号不越界', !/lane-([89]|\d\d)/.test(lib.graphSvg(lib.computeRows(Array.from({ length: 30 }, (_, i) => ({ hash: `h${i}`, parents: i < 29 ? [`h${i + 1}`] : [] }))).at(-1))));
 }
 
 /* --------------------------- 静态一致性 --------------------------- */
@@ -186,8 +342,12 @@ async function httpChecks() {
   // 未跟踪文件应当能看到本项目的文件（在 git-browser 仓库里）
   const untrackedNames = (s.untracked || []).map((f) => f.path);
   if (REPO_HINT) {
-    check('未跟踪列表包含 server.mjs', untrackedNames.includes('server.mjs'), untrackedNames.slice(0, 5).join(', '));
-    check('未跟踪列表包含 public/app.js', untrackedNames.includes('public/app.js'));
+    // 不假设这些文件处于什么状态（可能已提交），只要求工作区里读得到
+    for (const probe of ['server.mjs', 'public/app.js', 'public/styles.css']) {
+      const r = await getJSON('/api/file', { repo: repoId, path: probe, scope: 'worktree' });
+      check(`工作区里能读到 ${probe}`, r.status === 200 && typeof r.json?.content === 'string', `status=${r.status}`);
+    }
+    check('未跟踪列表里没有 .git 内部文件', !untrackedNames.some((p) => p.startsWith('.git/')));
   }
 
   // 单文件的状态一致性
@@ -311,6 +471,7 @@ console.log(`应用目录: ${APP_DIR}`);
 
 staticChecks();
 libChecks();
+themeChecks();
 let ctx;
 try {
   ctx = await httpChecks();
