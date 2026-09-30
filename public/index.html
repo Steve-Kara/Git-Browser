@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Git Browser · 实时仓库信息</title>
+<link rel="stylesheet" href="/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌿</text></svg>" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="logo">◆</span> Git Browser</div>
+    <div class="repo-picker">
+      <select id="repo-select" title="切换仓库"></select>
+      <div class="repo-path" id="repo-path"></div>
+    </div>
+    <div class="head-chips" id="head-chips"></div>
+    <div class="grow"></div>
+    <div class="live" id="live" title="实时连接状态"><span class="dot"></span><span id="live-text">连接中…</span></div>
+    <button class="btn" id="btn-refresh" title="立即刷新 (r)">刷新</button>
+    <button class="btn ghost" id="btn-help" title="快捷键">?</button>
+  </header>
+
+  <div class="banner hidden" id="op-banner"></div>
+
+  <main class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <section class="listpane">
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="status">变更 <span class="badge" id="badge-status">0</span></button>
+        <button class="tab" data-tab="history">历史</button>
+      </div>
+      <div class="listbody" id="listbody"></div>
+    </section>
+
+    <section class="detail" id="detail"></section>
+  </main>
+
+  <footer class="statusbar" id="statusbar"></footer>
+</div>
+<div class="toasts" id="toasts"></div>
+<div class="modal hidden" id="help-modal">
+  <div class="modal-box">
+    <h3>快捷键</h3>
+    <ul>
+      <li><kbd>r</kbd> 立即刷新</li>
+      <li><kbd>1</kbd> / <kbd>2</kbd> 切换「变更 / 历史」</li>
+      <li><kbd>j</kbd> / <kbd>k</kbd> 上下选择列表项</li>
+      <li><kbd>Enter</kbd> 打开选中项</li>
+      <li><kbd>Esc</kbd> 关闭弹窗</li>
+    </ul>
+    <p class="muted">面板是只读的：只查看信息，不会修改你的仓库。</p>
+    <button class="btn" id="btn-close-help">知道了</button>
+  </div>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

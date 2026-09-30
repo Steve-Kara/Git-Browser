@@ -1,0 +1,17 @@
+{
+  "name": "git-browser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "实时 Git 仓库信息面板：本地网页查看分支/HEAD/工作区变更/提交图/diff/stash/远端",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "smoke": "node tools/smoke.mjs --mutate"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["git", "dashboard", "realtime", "sse", "zero-dependency"],
+  "license": "MIT"
+}
