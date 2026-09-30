@@ -21,6 +21,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { parseReflog, classifyUndo } from './lib/reflog.mjs';
+
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 const VERSION = '1.0.0';
@@ -36,6 +38,7 @@ function parseArgs(argv) {
     repos: [],
     watch: 'all', // all | git | poll
     open: false,
+    readOnly: false,
     help: false,
   };
   const push = (v) => {
@@ -52,6 +55,7 @@ function parseArgs(argv) {
     else if (a === '--repo' || a === '-r') push(next());
     else if (a === '--watch') opts.watch = next();
     else if (a === '--open') opts.open = true;
+    else if (a === '--read-only') opts.readOnly = true;
     else if (a === '--help' || a === '-h') opts.help = true;
     else if (!a.startsWith('-')) push(a);
   }
@@ -73,6 +77,7 @@ Git Browser v${VERSION} — 实时 Git 仓库信息面板
       --host <addr>  监听地址 (默认 127.0.0.1，仅本机可访问)
   -r, --repo <path>  要浏览的仓库路径，可重复或用逗号分隔 (默认: 本文件所在目录)
       --watch <mode> all | git | poll   监听模式 (默认 all)
+      --read-only    禁用「撤销」写操作（默认允许，撤销前仍需页面确认）
   -h, --help         显示帮助
 
 环境变量:
@@ -966,6 +971,66 @@ setInterval(() => {
 }, 20000).unref?.();
 
 /* ------------------------------------------------------------------ *
+ * 撤销（唯一的写操作）
+ * ------------------------------------------------------------------ */
+
+const REFLOG_FORMAT = '%H%x1f%h%x1f%gd%x1f%gs%x1f%gD%x1f%aI%x1e';
+
+/** 采集撤销所需的上下文并生成方案（只读） */
+async function inspectUndo(repo) {
+  const cwd = repo.worktree || repo.path;
+  const [state, reflogRes] = await Promise.all([
+    buildState(repo),
+    git(['reflog', 'show', `--format=${REFLOG_FORMAT}`, '-n', '20', 'HEAD'], { cwd }),
+  ]);
+  const entries = parseReflog(reflogRes.stdout);
+  const plan = classifyUndo({
+    entries,
+    operation: state.operation,
+    unmerged: state.counts.conflicted > 0,
+    // 只把「已跟踪文件的改动」算作脏：未跟踪文件不会被 switch / reset --keep 覆盖，
+    // 真有问题时 git 会自己拒绝并报错，不必提前吓人
+    dirty: state.counts.staged + state.counts.unstaged > 0,
+    branch: state.head.branch,
+    detached: state.head.detached,
+    hasRemote: state.remotes.length > 0,
+    branchExists: (name) => state.localBranches.some((b) => b.name === name),
+  });
+  return {
+    plan,
+    expectOid: state.head.oid || null,
+    head: { state: state.head.state, branch: state.head.branch, short: state.head.short, subject: state.head.subject },
+    reflog: entries.slice(0, 5).map((e) => ({ selector: e.selector, short: e.short, subject: e.subject, date: e.date })),
+  };
+}
+
+function readJsonBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(Object.assign(new Error('请求体过大'), { statusCode: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8').trim();
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(Object.assign(new Error('请求体不是合法 JSON'), { statusCode: 400 }));
+      }
+    });
+    req.on('error', (err) => reject(err));
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * HTTP 服务
  * ------------------------------------------------------------------ */
 
@@ -1039,6 +1104,7 @@ const server = http.createServer(async (req, res) => {
         git: process.env.GIT_VERSION || null,
         spawnMode,
         watch: ARGS.watch,
+        writeEnabled: !ARGS.readOnly,
         repos: REPOS.map((r) => ({ id: r.id, name: r.name, path: r.path })),
       });
     }
@@ -1053,7 +1119,7 @@ const server = http.createServer(async (req, res) => {
       const repo = requireRepo(url, res);
       if (!repo) return;
       const state = await buildState(repo);
-      return sendJSON(res, 200, state);
+      return sendJSON(res, 200, { ...state, writeEnabled: !ARGS.readOnly });
     }
 
     if (p === '/api/log') {
@@ -1123,6 +1189,63 @@ const server = http.createServer(async (req, res) => {
         stat: parseStat(statRes.stdout),
         patch,
         truncated,
+      });
+    }
+
+    if (p === '/api/undo/inspect') {
+      const repo = requireRepo(url, res);
+      if (!repo) return;
+      const info = await inspectUndo(repo);
+      return sendJSON(res, 200, { ...info, writeEnabled: !ARGS.readOnly });
+    }
+
+    if (p === '/api/undo') {
+      if (req.method !== 'POST') return sendJSON(res, 405, { error: '请用 POST' });
+      if (ARGS.readOnly) return sendJSON(res, 403, { error: '服务端以 --read-only 启动，写操作已禁用' });
+
+      const body = await readJsonBody(req);
+      const repo = repoById(body.repo);
+      if (!repo) return sendJSON(res, 404, { error: '未找到仓库' });
+
+      // 关键：服务端重新推导方案，客户端只能「请求执行某一类撤销」，不能自带命令
+      const info = await inspectUndo(repo);
+      if (!info.plan.available) {
+        return sendJSON(res, 409, { error: info.plan.reason || '当前没有可撤销的操作', plan: info.plan });
+      }
+      if (body.kind !== info.plan.kind) {
+        return sendJSON(res, 409, {
+          error: '仓库状态已变化，撤销方案已更新，请重新确认',
+          plan: info.plan,
+          expectOid: info.expectOid,
+        });
+      }
+      // 乐观并发：HEAD 必须还是用户确认时看到的那个
+      if (info.expectOid && body.expectOid && body.expectOid !== info.expectOid) {
+        return sendJSON(res, 409, {
+          error: 'HEAD 已变化（可能被其他 git 进程修改），请重新确认',
+          expectOid: info.expectOid,
+          plan: info.plan,
+        });
+      }
+
+      const cwd = repo.worktree || repo.path;
+      const result = await git(info.plan.args, { cwd, timeout: 60000 });
+      if (result.code !== 0) {
+        return sendJSON(res, 500, {
+          error: trim(result.stderr) || `git ${info.plan.args.join(' ')} 失败`,
+          ran: info.plan.command,
+        });
+      }
+      const after = trim((await git(['rev-parse', '--verify', 'HEAD'], { cwd })).stdout) || null;
+      console.log(`[git-browser] 撤销已执行: ${info.plan.command}  (${repo.name}: ${info.expectOid?.slice(0, 7)} → ${after ? after.slice(0, 7) : 'unborn'})`);
+      return sendJSON(res, 200, {
+        ok: true,
+        label: info.plan.label,
+        ran: info.plan.command,
+        before: info.expectOid,
+        after,
+        stdout: trim(result.stdout),
+        stderr: trim(result.stderr),
       });
     }
 
@@ -1209,7 +1332,11 @@ const server = http.createServer(async (req, res) => {
     console.log(`[git-browser] git: ${process.env.GIT_VERSION}`);
     console.log(`[git-browser] 子进程输出模式: ${spawnMode}`);
     console.log(`[git-browser] 监听模式: ${ARGS.watch}`);
+    console.log(`[git-browser] 写操作（撤销）: ${ARGS.readOnly ? '已禁用 (--read-only)' : '已启用（页面内需二次确认）'}`);
     for (const r of REPOS) console.log(`[git-browser] 仓库: ${r.name}  ${r.path}${r.bare ? '  (bare)' : ''}`);
+    if (!ARGS.readOnly && ARGS.host !== '127.0.0.1' && ARGS.host !== 'localhost' && ARGS.host !== '::1') {
+      console.error('[git-browser] ⚠ 注意：绑定到了非本机地址且撤销写操作已启用，任何能访问该端口的人都可以执行 git reset —— 建议改用 --read-only 或只绑 127.0.0.1');
+    }
     for (const r of REPOS) {
       const w = watchers.get(r.id);
       if (w && w.watchError) console.error(`[git-browser] 监听警告 (${r.name}): ${w.watchError}`);

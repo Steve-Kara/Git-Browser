@@ -582,12 +582,114 @@ function renderStatusbar() {
 
 function render() {
   renderTop();
+  renderUndoButton();
   renderThemeButton();
   renderLive();
   renderSidebar();
   renderList();
   renderDetail();
   renderStatusbar();
+}
+
+/* ------------------------------ 撤销 ------------------------------ */
+
+async function inspectUndo() {
+  const info = await api('/api/undo/inspect');
+  S.undoPlan = info.plan;
+  S.undoExpect = info.expectOid;
+  return info;
+}
+
+/** 按钮文案跟随当前可撤销的动作，禁用态说明原因 */
+function renderUndoButton() {
+  const btn = $('btn-undo');
+  if (!btn) return;
+  const plan = S.undoPlan;
+  if (S.snap && S.snap.writeEnabled === false) {
+    btn.disabled = true;
+    btn.textContent = '↩ 撤销';
+    btn.title = '服务端以 --read-only 启动，写操作已禁用';
+    return;
+  }
+  btn.disabled = false;
+  if (plan && plan.available) {
+    btn.textContent = '↩ 撤销';
+    btn.title = `${plan.label}\n将执行：${plan.command}\n（点击后需确认）`;
+  } else if (plan && !plan.available) {
+    btn.textContent = '↩ 撤销';
+    btn.title = `当前没有可撤销的操作：${plan.reason || '未知原因'}`;
+  } else {
+    btn.textContent = '↩ 撤销';
+    btn.title = '撤销上一次操作';
+  }
+}
+
+function undoPlanHtml(info) {
+  const p = info.plan;
+  if (!p.available) {
+    return `<div class="banner" style="border-radius:6px">没有可撤销的操作：${esc(p.reason || '未知原因')}</div>`;
+  }
+  return `
+    <div class="msg-box">
+      <div class="subj">${esc(p.label)}</div>
+      ${esc(p.effect || '')}
+    </div>
+    <dl class="kv" style="margin-bottom:10px">
+      <dt>将执行</dt><dd>${esc(p.command)}</dd>
+      <dt>HEAD</dt><dd>${esc(info.head?.short || '—')} → ${esc(p.target ? p.target.short : '（删除引用，回到 unborn）')}</dd>
+      <dt>操作记录</dt><dd>${esc(info.reflog?.[0]?.subject || '—')}</dd>
+    </dl>
+    ${(p.warnings || []).length ? `<ul style="margin:0 0 4px;padding-left:18px;color:var(--yellow)">${p.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    <p class="muted" style="margin:8px 0 0">撤销只移动 HEAD / 切回分支，不使用 reset --hard，不会丢弃未提交的改动。</p>`;
+}
+
+async function openUndoDialog() {
+  const body = $('undo-body');
+  body.innerHTML = '<div class="empty-state">正在检查可撤销的操作…</div>';
+  $('undo-modal').classList.remove('hidden');
+  let info;
+  try {
+    info = await inspectUndo();
+  } catch (e) {
+    body.innerHTML = `<div class="banner error" style="border-radius:6px">检查失败：${esc(e.message)}</div>`;
+    $('btn-undo-confirm').disabled = true;
+    return;
+  }
+  body.innerHTML = undoPlanHtml(info);
+  $('btn-undo-confirm').disabled = !info.plan.available;
+  renderUndoButton();
+}
+
+async function confirmUndo() {
+  const plan = S.undoPlan;
+  if (!plan?.available) return;
+  const btn = $('btn-undo-confirm');
+  btn.disabled = true;
+  btn.textContent = '执行中…';
+  try {
+    const res = await fetch('/api/undo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: S.repoId, kind: plan.kind, expectOid: S.undoExpect }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    toast(`已撤销：${json.label}（执行 ${json.ran}）`, 'ok');
+    $('undo-modal').classList.add('hidden');
+  } catch (e) {
+    toast(`撤销失败：${e.message}`, 'err');
+    $('undo-body').innerHTML = `<div class="banner error" style="border-radius:6px">${esc(e.message)}</div><p class="muted">仓库状态可能已经变化，已重新检查。</p>`;
+    $('btn-undo-confirm').disabled = true;
+  } finally {
+    btn.textContent = '确认撤销';
+    await refreshAll();
+    try {
+      await inspectUndo();
+    } catch {
+      /* 忽略：下次点击还会重新检查 */
+    }
+    renderUndoButton();
+  }
 }
 
 /* ------------------------------ 交互 ------------------------------ */
@@ -717,7 +819,10 @@ document.addEventListener('keydown', (ev) => {
   } else if (ev.key === 'j') moveCursor(1);
   else if (ev.key === 'k') moveCursor(-1);
   else if (ev.key === 'Enter') activateCursor();
-  else if (ev.key === 'Escape') $('help-modal').classList.add('hidden');
+  else if (ev.key === 'Escape') {
+    $('help-modal').classList.add('hidden');
+    $('undo-modal').classList.add('hidden');
+  }
 });
 
 $('btn-help').addEventListener('click', () => $('help-modal').classList.remove('hidden'));
@@ -821,6 +926,12 @@ function connectStream() {
   connectStream();
   await loadState();
   await loadLog({ silent: true });
+  // 撤销按钮的提示需要知道当前可撤销什么；失败不影响其它功能
+  try {
+    await inspectUndo();
+  } catch {
+    /* ignore */
+  }
   render();
 
   // 首次进入给一个有用的默认选择

@@ -28,6 +28,7 @@
     <div class="head-chips" id="head-chips"></div>
     <div class="grow"></div>
     <div class="live" id="live" title="实时连接状态"><span class="dot"></span><span id="live-text">连接中…</span></div>
+    <button class="btn" id="btn-undo" title="撤销上一次操作">↩ 撤销</button>
     <button class="btn" id="btn-theme" title="切换浅色/深色模式 (t)">🌙</button>
     <button class="btn" id="btn-refresh" title="立即刷新 (r)">刷新</button>
     <button class="btn ghost" id="btn-help" title="快捷键">?</button>
@@ -63,8 +64,18 @@
       <li><kbd>Enter</kbd> 打开选中项</li>
       <li><kbd>Esc</kbd> 关闭弹窗</li>
     </ul>
-    <p class="muted">面板是只读的：只查看信息，不会修改你的仓库。</p>
+    <p class="muted">面板默认只读；唯一的写操作是顶栏的「撤销」，每次都需要你确认。</p>
     <button class="btn" id="btn-close-help">知道了</button>
+  </div>
+</div>
+<div class="modal hidden" id="undo-modal">
+  <div class="modal-box">
+    <h3>确认撤销</h3>
+    <div id="undo-body"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" id="btn-undo-cancel">取消</button>
+      <button class="btn" id="btn-undo-confirm">确认撤销</button>
+    </div>
   </div>
 </div>
 <script type="module" src="/app.js"></script>
