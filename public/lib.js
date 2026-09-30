@@ -7,7 +7,34 @@
 
 export const LANE_W = 12;
 export const ROW_H = 22;
-export const PALETTE = ['#3fb950', '#58a6ff', '#bc8cff', '#db8b3a', '#39c5cf', '#f778ba', '#d29922', '#7ee2a8'];
+export const LANE_COUNT = 8;
+
+/* ---------------------------- 主题 ---------------------------- */
+
+export const THEMES = ['dark', 'light'];
+
+/** 决定初始主题：用户显式选择 > 系统偏好 > 深色 */
+export function resolveTheme(saved, prefersLight) {
+  if (saved === 'light' || saved === 'dark') return saved;
+  return prefersLight ? 'light' : 'dark';
+}
+
+export function otherTheme(theme) {
+  return theme === 'light' ? 'dark' : 'light';
+}
+
+/** 按钮上显示的图标 = 当前主题 */
+export function themeIcon(theme) {
+  return theme === 'light' ? '☀️' : '🌙';
+}
+
+export function themeName(theme) {
+  return theme === 'light' ? '浅色' : '深色';
+}
+
+export function themeButtonTitle(theme) {
+  return `当前：${themeName(theme)}模式 · 点击切换到${themeName(otherTheme(theme))}模式 (t)`;
+}
 
 /** 列表分组定义（与 /api/state 字段对应） */
 export const GROUPS = [
@@ -231,24 +258,27 @@ export function computeRows(commits) {
   return rows;
 }
 
+/**
+ * 泳道图 SVG。颜色不写死在这里，而是用 lane-N class 交给 CSS 变量，
+ * 这样切换主题时不需要重新渲染列表。
+ */
 export function graphSvg(row) {
   const x = (i) => 1 + i * LANE_W + LANE_W / 2;
   const h = ROW_H;
   const w = Math.max(row.maxLane, 1) * LANE_W + 2;
+  const lane = (i) => `lane-${((i % LANE_COUNT) + LANE_COUNT) % LANE_COUNT}`;
   const parts = [];
   for (let i = 0; i < Math.max(row.incoming.length, row.outgoing.length); i++) {
     if (row.incoming[i] && row.outgoing[i]) {
-      parts.push(`<line x1="${x(i)}" y1="0" x2="${x(i)}" y2="${h}" stroke="${PALETTE[i % PALETTE.length]}" stroke-width="1.6" opacity=".55"/>`);
+      parts.push(`<line class="${lane(i)}" x1="${x(i)}" y1="0" x2="${x(i)}" y2="${h}"/>`);
     }
   }
   for (const e of row.edges) {
     const x1 = x(e.from);
     const x2 = x(e.to);
-    parts.push(
-      `<path d="M ${x1} ${h / 2} C ${x1} ${h}, ${x2} ${h / 2}, ${x2} ${h}" fill="none" stroke="${PALETTE[e.to % PALETTE.length]}" stroke-width="1.6" opacity=".75"/>`,
-    );
+    parts.push(`<path class="${lane(e.to)}" d="M ${x1} ${h / 2} C ${x1} ${h}, ${x2} ${h / 2}, ${x2} ${h}"/>`);
   }
-  parts.push(`<circle cx="${x(row.col)}" cy="${h / 2}" r="3.6" fill="${PALETTE[row.col % PALETTE.length]}" stroke="#0d1117" stroke-width="1.4"/>`);
+  parts.push(`<circle class="${lane(row.col)}" cx="${x(row.col)}" cy="${h / 2}" r="3.6"/>`);
   return `<svg class="graph" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${parts.join('')}</svg>`;
 }
 

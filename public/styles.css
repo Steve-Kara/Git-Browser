@@ -1,10 +1,21 @@
+/* ==========================================================================
+   主题令牌
+   深色为默认（:root），浅色通过 :root[data-theme="light"] 覆盖。
+   规则：浅色块必须覆盖下面每一个颜色令牌，不允许继承深色值
+   （tools/smoke.mjs 里有「令牌对等」与「对比度」自动检查）。
+   ========================================================================== */
+
 :root {
+  color-scheme: dark;
+
+  /* 基础色板 */
   --bg: #0d1117;
   --bg-2: #12181f;
   --bg-3: #161d26;
   --bg-hover: #1d2632;
   --border: #232c38;
   --border-2: #2c3745;
+  --border-hover: #3a4757;
   --fg: #e6edf3;
   --fg-dim: #9aa7b4;
   --fg-mute: #6b7684;
@@ -14,8 +25,158 @@
   --yellow: #d29922;
   --purple: #bc8cff;
   --orange: #db8b3a;
+
+  /* 组件令牌 */
+  --topbar-grad-from: #151d27;
+  --topbar-grad-to: #111823;
+  --scrollbar: #2a3442;
+  --overlay: rgba(0, 0, 0, .55);
+  --shadow: 0 6px 22px rgba(0, 0, 0, .45);
+  --sel-bg: #16273c;
+  --ref-current-bg: #14293f;
+  --row-hover: rgba(255, 255, 255, .03);
+  --pulse: rgba(63, 185, 80, .55);
+  --pulse-end: rgba(63, 185, 80, 0);
+
+  /* 按钮 */
+  --btn-active-bg: #16283d;
+  --btn-active-fg: #cfe4ff;
+
+  /* chips */
+  --chip-branch-bg: #12271a;
+  --chip-branch-fg: #7ee2a8;
+  --chip-branch-border: #2d5c3f;
+  --chip-detached-bg: #2a2008;
+  --chip-detached-fg: #e3b341;
+  --chip-detached-border: #6b4b13;
+  --chip-unborn-bg: #1d1630;
+  --chip-unborn-fg: #c9a6ff;
+  --chip-unborn-border: #4b3a6b;
+  --chip-ahead-bg: #0f2416;
+  --chip-ahead-fg: #3fb950;
+  --chip-ahead-border: #24512f;
+  --chip-behind-bg: #2a1310;
+  --chip-behind-fg: #f85149;
+  --chip-behind-border: #5c2622;
+  --chip-warn-bg: #262006;
+  --chip-warn-fg: #d29922;
+  --chip-warn-border: #57430f;
+
+  /* 提示条 */
+  --banner-warn-bg: #2a2008;
+  --banner-warn-fg: #e3b341;
+  --banner-warn-border: #57430f;
+  --banner-err-bg: #2a1310;
+  --banner-err-fg: #ff9a92;
+  --banner-err-border: #5c2622;
+
+  /* diff 配色 */
+  --diff-ln-bg: rgba(255, 255, 255, .02);
+  --diff-meta-bg: rgba(255, 255, 255, .015);
+  --diff-add-bg: rgba(46, 160, 67, .13);
+  --diff-add-fg: #b6f0be;
+  --diff-del-bg: rgba(248, 81, 73, .12);
+  --diff-del-fg: #ffb4ae;
+  --diff-hunk-bg: #16283d;
+  --diff-hunk-fg: #9fc7ff;
+  --diff-hunk-ln: #6f95c4;
+
+  /* 提交泳道 */
+  --lane-0: #3fb950;
+  --lane-1: #58a6ff;
+  --lane-2: #bc8cff;
+  --lane-3: #db8b3a;
+  --lane-4: #39c5cf;
+  --lane-5: #f778ba;
+  --lane-6: #d29922;
+  --lane-7: #7ee2a8;
+  --graph-node-stroke: #0d1117;
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-2: #f6f8fa;
+  --bg-3: #eaeef2;
+  --bg-hover: #eef2f6;
+  --border: #d0d7de;
+  --border-2: #d8dee4;
+  --border-hover: #b6bfc9;
+  --fg: #1f2328;
+  --fg-dim: #57606a;
+  --fg-mute: #6e7781;
+  --accent: #0969da;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --yellow: #9a6700;
+  --purple: #8250df;
+  --orange: #bc4c00;
+
+  --topbar-grad-from: #f6f8fa;
+  --topbar-grad-to: #eaeef2;
+  --scrollbar: #c9d1d9;
+  --overlay: rgba(31, 35, 40, .35);
+  --shadow: 0 6px 22px rgba(31, 35, 40, .18);
+  --sel-bg: #ddf4ff;
+  --ref-current-bg: #ddf4ff;
+  --row-hover: rgba(31, 35, 40, .045);
+  --pulse: rgba(26, 127, 55, .45);
+  --pulse-end: rgba(26, 127, 55, 0);
+
+  --btn-active-bg: #ddf4ff;
+  --btn-active-fg: #0550ae;
+
+  --chip-branch-bg: #dafbe1;
+  --chip-branch-fg: #116329;
+  --chip-branch-border: #aceebb;
+  --chip-detached-bg: #fff8c5;
+  --chip-detached-fg: #7d4e00;
+  --chip-detached-border: #eed888;
+  --chip-unborn-bg: #fbefff;
+  --chip-unborn-fg: #8250df;
+  --chip-unborn-border: #ecd8ff;
+  --chip-ahead-bg: #dafbe1;
+  --chip-ahead-fg: #116329;
+  --chip-ahead-border: #aceebb;
+  --chip-behind-bg: #ffebe9;
+  --chip-behind-fg: #cf222e;
+  --chip-behind-border: #ffcecb;
+  --chip-warn-bg: #fff8c5;
+  --chip-warn-fg: #7d4e00;
+  --chip-warn-border: #eed888;
+
+  --banner-warn-bg: #fff8c5;
+  --banner-warn-fg: #7d4e00;
+  --banner-warn-border: #eed888;
+  --banner-err-bg: #ffebe9;
+  --banner-err-fg: #cf222e;
+  --banner-err-border: #ffcecb;
+
+  --diff-ln-bg: rgba(31, 35, 40, .03);
+  --diff-meta-bg: rgba(31, 35, 40, .02);
+  --diff-add-bg: #e6ffec;
+  --diff-add-fg: #1a7f37;
+  --diff-del-bg: #ffebe9;
+  --diff-del-fg: #cf222e;
+  --diff-hunk-bg: #ddf4ff;
+  --diff-hunk-fg: #0550ae;
+  --diff-hunk-ln: #6e7781;
+
+  --lane-0: #1a7f37;
+  --lane-1: #0969da;
+  --lane-2: #8250df;
+  --lane-3: #bc4c00;
+  --lane-4: #1b7c83;
+  --lane-5: #bf3989;
+  --lane-6: #9a6700;
+  --lane-7: #116329;
+  --graph-node-stroke: #ffffff;
+}
+
+/* ========================================================================== */
 
 * { box-sizing: border-box; }
 
@@ -41,7 +202,7 @@ body {
 .topbar {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 14px;
-  background: linear-gradient(180deg, #151d27, #111823);
+  background: linear-gradient(180deg, var(--topbar-grad-from), var(--topbar-grad-to));
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -69,42 +230,43 @@ body {
   overflow: hidden; text-overflow: ellipsis;
 }
 .chip.mono { font-family: var(--mono); }
-.chip.branch { border-color: #2d5c3f; background: #12271a; color: #7ee2a8; }
-.chip.detached { border-color: #6b4b13; background: #2a2008; color: #e3b341; }
-.chip.unborn { border-color: #4b3a6b; background: #1d1630; color: #c9a6ff; }
+.chip.branch { border-color: var(--chip-branch-border); background: var(--chip-branch-bg); color: var(--chip-branch-fg); }
+.chip.detached { border-color: var(--chip-detached-border); background: var(--chip-detached-bg); color: var(--chip-detached-fg); }
+.chip.unborn { border-color: var(--chip-unborn-border); background: var(--chip-unborn-bg); color: var(--chip-unborn-fg); }
 .chip.subject { color: var(--fg-dim); border-color: var(--border); background: transparent; max-width: 420px; }
-.chip.ahead { color: var(--green); border-color: #24512f; background: #0f2416; }
-.chip.behind { color: var(--red); border-color: #5c2622; background: #2a1310; }
-.chip.warn { color: var(--yellow); border-color: #57430f; background: #262006; }
+.chip.ahead { color: var(--chip-ahead-fg); border-color: var(--chip-ahead-border); background: var(--chip-ahead-bg); }
+.chip.behind { color: var(--chip-behind-fg); border-color: var(--chip-behind-border); background: var(--chip-behind-bg); }
+.chip.warn { color: var(--chip-warn-fg); border-color: var(--chip-warn-border); background: var(--chip-warn-bg); }
 .chip.bare { color: var(--purple); }
 
 .live { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg-dim); white-space: nowrap; }
 .live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-mute); }
-.live.on .dot { background: var(--green); box-shadow: 0 0 0 0 rgba(63,185,80,.7); animation: pulse 2s infinite; }
+.live.on .dot { background: var(--green); box-shadow: 0 0 0 0 var(--pulse); animation: pulse 2s infinite; }
 .live.poll .dot { background: var(--yellow); }
 .live.off .dot { background: var(--red); }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(63,185,80,.55); }
-  70% { box-shadow: 0 0 0 7px rgba(63,185,80,0); }
-  100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  0% { box-shadow: 0 0 0 0 var(--pulse); }
+  70% { box-shadow: 0 0 0 7px var(--pulse-end); }
+  100% { box-shadow: 0 0 0 0 var(--pulse-end); }
 }
 
 .btn {
   background: var(--bg-3); color: var(--fg); border: 1px solid var(--border-2);
   border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
 }
-.btn:hover { background: var(--bg-hover); border-color: #3a4757; }
+.btn:hover { background: var(--bg-hover); border-color: var(--border-hover); }
 .btn.ghost { background: transparent; }
 .btn.sm { padding: 2px 7px; font-size: 11.5px; }
-.btn.active { border-color: var(--accent); color: #cfe4ff; background: #16283d; }
+.btn.active { border-color: var(--accent); color: var(--btn-active-fg); background: var(--btn-active-bg); }
+#btn-theme { min-width: 34px; font-size: 13px; line-height: 1.2; }
 
 /* ---------------- banner ---------------- */
 
 .banner {
   padding: 7px 14px; font-size: 12.5px;
-  background: #2a2008; color: #e3b341; border-bottom: 1px solid #57430f;
+  background: var(--banner-warn-bg); color: var(--banner-warn-fg); border-bottom: 1px solid var(--banner-warn-border);
 }
-.banner.error { background: #2a1310; color: #ff9a92; border-color: #5c2622; }
+.banner.error { background: var(--banner-err-bg); color: var(--banner-err-fg); border-color: var(--banner-err-border); }
 
 /* ---------------- layout ---------------- */
 
@@ -120,7 +282,7 @@ body {
 
 .sidebar::-webkit-scrollbar, .listbody::-webkit-scrollbar, .detail::-webkit-scrollbar { width: 10px; height: 10px; }
 .sidebar::-webkit-scrollbar-thumb, .listbody::-webkit-scrollbar-thumb, .detail::-webkit-scrollbar-thumb {
-  background: #2a3442; border-radius: 6px; border: 2px solid transparent; background-clip: content-box;
+  background: var(--scrollbar); border-radius: 6px; border: 2px solid transparent; background-clip: content-box;
 }
 
 /* ---------------- sidebar ---------------- */
@@ -141,7 +303,7 @@ body {
   padding: 3px 6px; border-radius: 5px; cursor: pointer; font-size: 12px;
 }
 .ref-item:hover { background: var(--bg-hover); }
-.ref-item.current { background: #14293f; }
+.ref-item.current { background: var(--ref-current-bg); }
 .ref-item.active { outline: 1px solid var(--accent); }
 .ref-item .glyph { color: var(--fg-mute); width: 12px; text-align: center; }
 .ref-item.current .glyph { color: var(--green); }
@@ -179,7 +341,7 @@ body {
   border-left: 2px solid transparent;
 }
 .file-item:hover, .commit-item:hover { background: var(--bg-hover); }
-.file-item.sel, .commit-item.sel { background: #16273c; border-left-color: var(--accent); }
+.file-item.sel, .commit-item.sel { background: var(--sel-bg); border-left-color: var(--accent); }
 .file-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
 .file-item .dir { color: var(--fg-mute); }
 .file-item .size { color: var(--fg-mute); font-size: 10.5px; font-family: var(--mono); }
@@ -206,9 +368,24 @@ body {
   font-size: 10px; border-radius: 4px; padding: 0 4px; border: 1px solid var(--border-2);
   color: var(--fg-dim); font-family: var(--mono); white-space: nowrap;
 }
-.ref-badge.head { color: #7ee2a8; border-color: #2d5c3f; background: #12271a; }
-.ref-badge.tag { color: #e3b341; border-color: #57430f; background: #262006; }
-.ref-badge.remote { color: #c9a6ff; border-color: #4b3a6b; background: #1d1630; }
+.ref-badge.head { color: var(--chip-branch-fg); border-color: var(--chip-branch-border); background: var(--chip-branch-bg); }
+.ref-badge.tag { color: var(--chip-warn-fg); border-color: var(--chip-warn-border); background: var(--chip-warn-bg); }
+.ref-badge.remote { color: var(--chip-unborn-fg); border-color: var(--chip-unborn-border); background: var(--chip-unborn-bg); }
+
+/* ---------------- 提交泳道图（颜色走 CSS 变量，随主题切换） ---------------- */
+
+.graph line, .graph path { stroke: currentColor; fill: none; }
+.graph line { stroke-width: 1.6; opacity: .55; }
+.graph path { stroke-width: 1.6; opacity: .75; }
+.graph circle { fill: currentColor; stroke: var(--graph-node-stroke); stroke-width: 1.4; }
+.lane-0 { color: var(--lane-0); }
+.lane-1 { color: var(--lane-1); }
+.lane-2 { color: var(--lane-2); }
+.lane-3 { color: var(--lane-3); }
+.lane-4 { color: var(--lane-4); }
+.lane-5 { color: var(--lane-5); }
+.lane-6 { color: var(--lane-6); }
+.lane-7 { color: var(--lane-7); }
 
 /* ---------------- detail ---------------- */
 
@@ -222,20 +399,20 @@ body {
 
 .diff { font-family: var(--mono); font-size: 12px; line-height: 1.5; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .diff .dl { display: flex; white-space: pre; }
-.diff .dl:hover { background: rgba(255,255,255,.03); }
+.diff .dl:hover { background: var(--row-hover); }
 .diff .ln {
   flex: 0 0 auto; width: 52px; text-align: right; padding: 0 8px;
-  color: var(--fg-mute); background: rgba(255,255,255,.02); user-select: none;
+  color: var(--fg-mute); background: var(--diff-ln-bg); user-select: none;
   border-right: 1px solid var(--border);
 }
 .diff .tx { flex: 1 1 auto; padding: 0 10px; overflow-wrap: anywhere; white-space: pre-wrap; }
-.dl.add { background: rgba(46,160,67,.13); }
-.dl.add .tx { color: #b6f0be; }
-.dl.del { background: rgba(248,81,73,.12); }
-.dl.del .tx { color: #ffb4ae; }
-.dl.hunk { background: #16283d; color: #9fc7ff; }
-.dl.hunk .ln { background: transparent; color: #6f95c4; }
-.dl.meta { color: var(--fg-mute); background: rgba(255,255,255,.015); }
+.dl.add { background: var(--diff-add-bg); }
+.dl.add .tx { color: var(--diff-add-fg); }
+.dl.del { background: var(--diff-del-bg); }
+.dl.del .tx { color: var(--diff-del-fg); }
+.dl.hunk { background: var(--diff-hunk-bg); color: var(--diff-hunk-fg); }
+.dl.hunk .ln { background: transparent; color: var(--diff-hunk-ln); }
+.dl.meta { color: var(--fg-mute); background: var(--diff-meta-bg); }
 .dl.meta .tx { color: var(--fg-dim); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-bottom: 12px; }
@@ -282,14 +459,14 @@ body {
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
 .toast {
   background: var(--bg-3); border: 1px solid var(--border-2); border-left: 3px solid var(--accent);
-  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 6px 22px rgba(0,0,0,.45);
+  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; box-shadow: var(--shadow);
   animation: slide .18s ease-out;
 }
 .toast.err { border-left-color: var(--red); }
 .toast.ok { border-left-color: var(--green); }
 @keyframes slide { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 60; }
+.modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 60; }
 .modal-box { background: var(--bg-2); border: 1px solid var(--border-2); border-radius: 10px; padding: 18px 20px; width: min(420px, 92vw); }
 .modal-box h3 { margin: 0 0 10px; }
 .modal-box ul { margin: 0 0 12px; padding-left: 18px; }
