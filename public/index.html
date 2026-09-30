@@ -4,6 +4,16 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Git Browser · 实时仓库信息</title>
+<script>
+  // 在首屏绘制前确定主题，避免深→浅闪烁：显式选择 > 系统偏好 > 深色
+  try {
+    var saved = localStorage.getItem('gb-theme');
+    var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = saved === 'light' || saved === 'dark' ? saved : prefersLight ? 'light' : 'dark';
+  } catch (e) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+</script>
 <link rel="stylesheet" href="/styles.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌿</text></svg>" />
 </head>
@@ -18,6 +28,7 @@
     <div class="head-chips" id="head-chips"></div>
     <div class="grow"></div>
     <div class="live" id="live" title="实时连接状态"><span class="dot"></span><span id="live-text">连接中…</span></div>
+    <button class="btn" id="btn-theme" title="切换浅色/深色模式 (t)">🌙</button>
     <button class="btn" id="btn-refresh" title="立即刷新 (r)">刷新</button>
     <button class="btn ghost" id="btn-help" title="快捷键">?</button>
   </header>
@@ -46,6 +57,7 @@
     <h3>快捷键</h3>
     <ul>
       <li><kbd>r</kbd> 立即刷新</li>
+      <li><kbd>t</kbd> 切换浅色 / 深色模式</li>
       <li><kbd>1</kbd> / <kbd>2</kbd> 切换「变更 / 历史」</li>
       <li><kbd>j</kbd> / <kbd>k</kbd> 上下选择列表项</li>
       <li><kbd>Enter</kbd> 打开选中项</li>

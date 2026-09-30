@@ -31,13 +31,20 @@ node server.mjs --watch git                       # 只监听 .git（超大工�
 
 | 区域 | 内容 |
 | --- | --- |
-| 顶栏 | 仓库路径、当前分支、HEAD 短 hash、上游分支、领先/落后、`git describe`、无上游警告、SSE 连接状态 |
+| 顶栏 | 仓库路径、当前分支、HEAD 短 hash、上游分支、领先/落后、`git describe`、无上游警告、SSE 连接状态、**浅色/深色切换** |
 | 左栏 | 仓库信息（工作区 / git 目录 / 提交总数 / 对象数 / 身份 / 最近 fetch / git 版本）、进行中的操作（merge/rebase/cherry-pick/revert/bisect/index.lock）、本地分支（含每个分支的 ↑领先 ↓落后）、远端分支、标签、stash、远端 |
 | 中栏 | **变更**：冲突 / 已暂存 / 未暂存 / 未跟踪 四组文件；**历史**：带泳道图的提交列表（支持点击分支/标签/stash 切换查看的 ref、`全部 refs` 开关） |
 | 右栏 | 文件 diff（工作区⇄暂存区 / 暂存区⇄HEAD / 工作区⇄HEAD / 未跟踪整文件）、提交详情（meta + 按文件折叠的 patch + stat）、文件内容查看 |
 | 底栏 | 各组计数、状态采集耗时、上次更新时间、连接模式 |
 
-快捷键：`r` 刷新、`1`/`2` 切换变更/历史、`j`/`k` 上下选择、`Enter` 打开、`Esc` 关弹窗（右上角 `?` 也有说明）。
+快捷键：`r` 刷新、`t` 切换浅色/深色、`1`/`2` 切换变更/历史、`j`/`k` 上下选择、`Enter` 打开、`Esc` 关弹窗（右上角 `?` 也有说明）。
+
+### 主题（浅色 / 深色）
+
+- 默认深色；从未手动切换过时**跟随系统** `prefers-color-scheme`，手动切过一次后以你的选择为准（存在 `localStorage` 的 `gb-theme`）。
+- 顶栏 🌙/☀️ 按钮或快捷键 `t` 切换；主题在首屏样式加载前就已落定，不会有深→浅闪烁。
+- 所有颜色都收敛成 CSS 变量令牌（深色在 `:root`，浅色在 `:root[data-theme="light"]`），提交泳道图的颜色也走变量，所以**切换主题不需要重新渲染列表**。
+- 自动化会检查：浅色必须覆盖深色的每一个颜色令牌（防止继承深色值）、组件样式里不允许写死颜色、以及正文/diff 增删/chip 等关键组合的 WCAG 对比度达标。
 
 > 仓库还没有第一次提交时（unborn HEAD）也能正常用：会明确显示「尚无提交」并列出未跟踪文件，而不是报错。
 
@@ -78,7 +85,7 @@ node tools/smoke.mjs --mutate                    # 默认打 http://127.0.0.1:87
 node tools/smoke.mjs --base http://127.0.0.1:8788 --mutate
 ```
 
-覆盖 61 项：纯函数单元测试（diff 渲染行号、HTML 转义防注入、提交泳道算法、格式化）、前端静态一致性（DOM id / CSS class 是否对得上）、全部接口与边界（未知 repo、未知提交、路径穿越）、以及 SSE 实时推送（真的写一个文件再删掉，验证事件到达）。
+覆盖 90 项：纯函数单元测试（diff 渲染行号、HTML 转义防注入、提交泳道算法、主题解析、格式化）、前端静态一致性（DOM id / CSS class 是否对得上）、主题（令牌对等、无写死颜色、对比度）、全部接口与边界（未知 repo、未知提交、路径穿越）、以及 SSE 实时推送（真的写一个文件再删掉，验证事件到达）。
 
 ## 已知限制
 
@@ -91,9 +98,9 @@ node tools/smoke.mjs --base http://127.0.0.1:8788 --mutate
 
 ```
 server.mjs            HTTP + SSE 服务端、git 调用与状态解析
-public/index.html     页面骨架
-public/lib.js         纯函数（diff 渲染、泳道图、格式化）——可在 Node 中直接测试
+public/index.html     页面骨架 + 首屏主题脚本
+public/lib.js         纯函数（diff 渲染、泳道图、主题解析、格式化）——可在 Node 中直接测试
 public/app.js         状态管理、请求、渲染与交互
-public/styles.css     深色主题样式
-tools/smoke.mjs       冒烟测试（含纯函数单元测试）
+public/styles.css     深色/浅色两套主题令牌 + 组件样式
+tools/smoke.mjs       冒烟测试（含纯函数单测、主题检查、接口边界、SSE 实测）
 ```
